@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stock Sentiment Analysis</title>
+    <style>
+        table { width: 100%; border-collapse: collapse; }
+        table, th, td { border: 1px solid black; }
+        th, td { padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+
+    <h1>Stock Sentiment Analysis</h1>
+
+    <table>
+        <tr>
+            <th>Title</th>
+            <th>Source</th>
+            <th>Date</th>
+            <th>Ticker</th>
+            <th>Sentiment Score</th>
+            <th>Confidence Score</th>
+        </tr>
+        {% for row in news %}
+        <tr>
+            <td><a href="{{ row[3] }}" target="_blank">{{ row[0] }}</a></td>
+            <td>{{ row[1] }}</td>
+            <td>{{ row[2] }}</td>
+            <td>{{ row[5] }}</td>
+            <td>{{ "%.4f"|format(row[6]) }}</td>  <!-- Sentiment Score rounded -->
+            <td>{{ "%.2f"|format(row[7] * 100) }}%</td>  <!-- Confidence Score as percentage -->
+        </tr>
+        {% endfor %}
+    </table>
+
+</body>
+</html>

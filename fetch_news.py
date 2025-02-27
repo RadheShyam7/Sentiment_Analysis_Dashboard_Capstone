@@ -3,6 +3,7 @@ import pandas as pd
 import io
 from bs4 import BeautifulSoup
 import sqlite3
+import yfinance as yf
 from transformers import BertTokenizer, BertForSequenceClassification, pipeline
 import time
 
@@ -12,7 +13,7 @@ model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone"
 finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
 # Your API Token
-API_TOKEN = "96ce07ac-430a-4fbe-8854-8234b59bfad4"
+API_TOKEN = "cde07cf5-0881-4812-894e-1f2bc46799db"
 BASE_URL = "https://elite.finviz.com/news_export.ashx"
 
 # Headers to mimic a real browser
@@ -34,7 +35,7 @@ COOKIES = {
 conn = sqlite3.connect("stock_sentiment.db")
 cursor = conn.cursor()
 
-# Create Table if Not Exists (Updated to store SentimentScore and ConfidenceScore)
+# Create Table if Not Exists (Updated to store SentimentScore, ConfidenceScore, and PriceChange)
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS StockNews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,15 +47,17 @@ cursor.execute("""
         Ticker TEXT,
         Full_Text TEXT,
         SentimentScore REAL,
-        ConfidenceScore REAL
+        ConfidenceScore REAL,
+        PriceChange REAL
     )
 """)
+
 conn.commit()
 
 def fetch_finviz_news(filters=""):
     """
     Fetch stock news headlines from Finviz.
-    Scrape full article text, perform sentiment analysis, and store in SQLite.
+    Scrape full article text, perform sentiment analysis, fetch stock price change, and store in SQLite.
     """
     url = f"{BASE_URL}?v=3&auth={API_TOKEN}&{filters}"
 
@@ -73,20 +76,29 @@ def fetch_finviz_news(filters=""):
             # Scrape full article text
             df["Full_Text"] = df["URL"].apply(scrape_article_text)
 
-            # Perform sentiment analysis on the full article
+            # Perform sentiment analysis
             df[["SentimentScore", "ConfidenceScore"]] = df["Full_Text"].apply(lambda text: pd.Series(classify_sentiment_finbert(text)))
 
             # Insert multiple rows for articles with multiple tickers
             for _, row in df.iterrows():
                 tickers = row["Ticker"].split(",")  # Split multiple tickers
                 for ticker in tickers:
+                    price_change = get_price_change(ticker.strip())  # Get price change
+                    sentiment_score, confidence_score = classify_sentiment_finbert(row["Full_Text"])
+
+                    # Ensure defaults if values are missing
+                    if price_change is None:
+                        price_change = 0.0
+                    if sentiment_score is None:
+                        sentiment_score = 0.0
+
                     cursor.execute("""
-                        INSERT INTO StockNews (Title, Source, Date, URL, Category, Ticker, Full_Text, SentimentScore, ConfidenceScore)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row["Title"], row["Source"], row["Date"], row["URL"], row["Category"], ticker.strip(), row["Full_Text"], row["SentimentScore"], row["ConfidenceScore"]))
+                        INSERT INTO StockNews (Title, Source, Date, URL, Category, Ticker, Full_Text, SentimentScore, ConfidenceScore, PriceChange)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (row["Title"], row["Source"], row["Date"], row["URL"], row["Category"], ticker.strip(), row["Full_Text"], sentiment_score, confidence_score, price_change))
 
             conn.commit()
-            print("✅ Successfully stored Stock News with Sentiment and Confidence Scores in Database")
+            print("✅ Successfully stored Stock News with Sentiment, Confidence Scores, and Price Changes in Database")
             return True
         except Exception as e:
             print(f"❌ Error parsing response: {e}")
@@ -145,6 +157,28 @@ def classify_sentiment_finbert(text):
     except Exception as e:
         print(f"⚠️ Error analyzing sentiment: {e}")
         return 0.0, 0.0  # Default to neutral with 0 confidence
+
+def get_price_change(ticker):
+    """
+    Fetches the latest price change for a given stock ticker using Yahoo Finance.
+    Returns the percentage change from the previous close.
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="2d")  # Get last 2 days' data
+
+        if len(hist) < 2:
+            return None  # Not enough data to calculate change
+
+        prev_close = hist["Close"].iloc[-2]  # Previous day's close
+        current_price = hist["Close"].iloc[-1]  # Last available close price
+
+        price_change = ((current_price - prev_close) / prev_close) * 100  # Percentage change
+
+        return round(price_change, 2)  # Return rounded percentage change
+    except Exception as e:
+        print(f"⚠️ Failed to fetch price change for {ticker}: {e}")
+        return None
 
 # Run the function to fetch, scrape, analyze, and store news
 fetch_finviz_news()

@@ -2,37 +2,132 @@
 <html>
 <head>
     <title>Stock Sentiment Analysis</title>
+    <script>
+        function sortBy(field, order) {
+            let url = new URL(window.location.href);
+            url.searchParams.set("sort_by", field);
+            url.searchParams.set("order", order);
+            window.location.href = url.toString();
+        }
+        
+        function openTab(evt, tabName) {
+            let i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+    </script>
     <style>
+        body { font-family: Arial, sans-serif; }
         table { width: 100%; border-collapse: collapse; }
         table, th, td { border: 1px solid black; }
         th, td { padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
+        .sort-btn { cursor: pointer; color: blue; text-decoration: none; margin-left: 5px; font-size: 12px; }
+        .sort-btn:hover { text-decoration: underline; }
+        
+        /* Tab styles */
+        .tab {
+            overflow: hidden;
+            border-bottom: 2px solid #ccc;
+            background-color: #f2f2f2;
+        }
+        .tab button {
+            background-color: inherit;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 10px 20px;
+            transition: 0.3s;
+            font-size: 16px;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #ccc;
+        }
+        .tabcontent {
+            display: none;
+            padding: 20px;
+        }
     </style>
 </head>
 <body>
 
     <h1>Stock Sentiment Analysis</h1>
 
-    <table>
-        <tr>
-            <th>Title</th>
-            <th>Source</th>
-            <th>Date</th>
-            <th>Ticker</th>
-            <th>Sentiment Score</th>
-            <th>Confidence Score</th>
-        </tr>
-        {% for row in news %}
-        <tr>
-            <td><a href="{{ row[3] }}" target="_blank">{{ row[0] }}</a></td>
-            <td>{{ row[1] }}</td>
-            <td>{{ row[2] }}</td>
-            <td>{{ row[5] }}</td>
-            <td>{{ "%.4f"|format(row[6]) }}</td>  <!-- Sentiment Score rounded -->
-            <td>{{ "%.2f"|format(row[7] * 100) }}%</td>  <!-- Confidence Score as percentage -->
-        </tr>
-        {% endfor %}
-    </table>
+    <div class="tab">
+        <button class="tablinks active" onclick="openTab(event, 'news')">Stock News</button>
+        <button class="tablinks" onclick="openTab(event, 'chart')">Sentiment vs Price Change</button>
+    </div>
+
+    <!-- Stock News Table -->
+    <div id="news" class="tabcontent" style="display: block;">
+        <table>
+            <tr>
+                <th>Title</th>
+                <th>Source</th>
+                <th>Date</th>
+                <th>Ticker</th>
+                <th>Sentiment Score 
+                    <a class="sort-btn" onclick="sortBy('sentiment', 'desc')">&#9650;</a> <!-- Up arrow -->
+                    <a class="sort-btn" onclick="sortBy('sentiment', 'asc')">&#9660;</a> <!-- Down arrow -->
+                </th>
+                <th>Confidence Score</th>
+                <th>Price Change 
+                    <a class="sort-btn" onclick="sortBy('price', 'desc')">&#9650;</a> <!-- Up arrow -->
+                    <a class="sort-btn" onclick="sortBy('price', 'asc')">&#9660;</a> <!-- Down arrow -->
+                </th>
+            </tr>
+            {% for row in news %}
+            <tr>
+                <td><a href="{{ row[3] }}" target="_blank">{{ row[0] }}</a></td>
+                <td>{{ row[1] }}</td>
+                <td>{{ row[2] }}</td>
+                <td>{{ row[5] }}</td>
+                <td>{{ "%.4f"|format(row[6]) }}</td>  <!-- Sentiment Score -->
+                <td>{{ "%.2f"|format(row[7] * 100) }}%</td>  <!-- Confidence Score -->
+                <td>
+                    {% if row[8] is not none %}
+                        {{ "%.2f"|format(row[8]) }}%
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>  <!-- Price Change -->
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    <!-- Quadrant Chart -->
+    <div id="chart" class="tabcontent">
+        <h2>Stock Sentiment vs Price Change</h2>
+        <div id="chart-container"></div>
+    </div>
+
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script>
+        fetch("/chart-data")
+            .then(response => response.json())
+            .then(data => {
+                console.log("📊 Debugging Plotly Data:", data);  // Log data to browser console
+                if (data.data.length === 0) {
+                    console.warn("⚠️ No points found to plot!");
+                } else {
+                    Plotly.newPlot("chart-container", data.data, data.layout);
+                }
+            })
+            .catch(error => console.error("❌ Error loading chart data:", error));
+    </script>
+    
 
 </body>
 </html>

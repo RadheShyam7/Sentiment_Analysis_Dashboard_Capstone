@@ -42,25 +42,24 @@ def chart_data():
     # Get basic data from StockNews
     df_news = pd.read_sql_query("SELECT Ticker, SentimentScore, PriceChange FROM StockNews", conn)
     
-    # Get volume data for each ticker (assuming you have it in the database)
-    # If you don't have volume data already, you'll need to fetch it using yfinance
+    # Get volume data for each ticker
     tickers = list(set(df_news['Ticker'].tolist()))
-    
-    # Create a dictionary to store volume data
     volume_data = {}
     
-    # Use yfinance to get volume data for each ticker
+    # Use yfinance to get volume data for each ticker - with proper error handling
     import yfinance as yf
     for ticker in tickers:
         try:
             # Get data for last 10 days
-            ticker_data = yf.download(ticker, period="10d")
-            if not ticker_data.empty:
-                # Calculate average volume and relative volume (today's volume / average)
-                avg_volume = ticker_data['Volume'][:-1].mean()  # Average excluding latest day
+            ticker_data = yf.download(ticker, period="10d", progress=False)
+            if not ticker_data.empty and len(ticker_data) > 1:  # Fixed condition
+                # Calculate average volume and relative volume
+                avg_volume = ticker_data['Volume'].iloc[:-1].mean()  # Average excluding latest day
                 latest_volume = ticker_data['Volume'].iloc[-1]  # Latest day's volume
-                rel_volume = latest_volume / avg_volume if avg_volume > 0 else 1.0
+                rel_volume = float(latest_volume / avg_volume) if avg_volume > 0 else 1.0
                 volume_data[ticker] = rel_volume
+            else:
+                volume_data[ticker] = 1.0
         except Exception as e:
             print(f"Error getting volume for {ticker}: {e}")
             volume_data[ticker] = 1.0  # Default to 1.0 (no change) on error
@@ -77,33 +76,33 @@ def chart_data():
     if df.empty:
         return json.dumps({"data": [], "layout": {"title": "No Data Available"}})
 
-    # Create a 3D scatter plot
+    # Create a 3D scatter plot - converting all Series to lists explicitly
     data = [{
         "x": df["SentimentScore"].tolist(),
         "y": df["PriceChange"].tolist(),
         "z": df["RelativeVolume"].tolist(),
         "mode": "markers",
-        "type": "scatter3d",  # Changed to 3D scatter
+        "type": "scatter3d", 
         "marker": {
             "size": 10,
-            "color": df["SentimentScore"],  # Color by sentiment
-            "colorscale": "RdBu",  # Red for negative, Blue for positive
+            "color": df["SentimentScore"].tolist(),  # Convert to list
+            "colorscale": "RdBu", 
             "colorbar": {"title": "Sentiment"},
             "opacity": 0.8
         },
         "text": [f"{ticker}<br>Sentiment: {score:.4f}<br>Price: {change:.2f}%<br>Vol: {vol:.2f}x" 
                 for ticker, score, change, vol in zip(
-                    df["Ticker"], 
-                    df["SentimentScore"], 
-                    df["PriceChange"], 
-                    df["RelativeVolume"]
+                    df["Ticker"].tolist(), 
+                    df["SentimentScore"].tolist(), 
+                    df["PriceChange"].tolist(), 
+                    df["RelativeVolume"].tolist()
                 )],
         "hoverinfo": "text"
     }]
 
     layout = {
         "title": "Stock Sentiment vs Price Change vs Volume",
-        "scene": {  # 3D scene configuration
+        "scene": {
             "xaxis": {"title": "Sentiment Score"},
             "yaxis": {"title": "Price Change (%)"},
             "zaxis": {"title": "Relative Volume (x avg)"}

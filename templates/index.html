@@ -107,12 +107,19 @@
         </table>
     </div>
 
+    <!-- Add this before the Quadrant Chart section -->
+    <div class="chart-controls">
+        <input type="text" id="ticker-search" placeholder="Search by ticker (e.g., AAPL)">
+        <button onclick="searchTicker()">Highlight</button>
+        <button onclick="resetHighlight()">Reset</button>
+    </div>
+
     <!-- Quadrant Chart -->
     <div id="chart" class="tabcontent">
         <h2>Stock Sentiment vs Price Change vs Volume</h2>
         <div id="chart-container" style="height: 600px;"></div>
         <div class="chart-instructions">
-            <p><strong>How to use:</strong> Drag to rotate the 3D view. Scroll to zoom in/out.</p>
+            <p><strong>How to use:</strong> Drag to rotate the 3D view. Scroll to zoom in/out. Use the search to highlight specific tickers.</p>
             <ul>
                 <li><strong>X-axis:</strong> Sentiment Score (negative to positive)</li>
                 <li><strong>Y-axis:</strong> Price Change (%)</li>
@@ -123,6 +130,9 @@
 
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script>
+        let originalData = null;
+        let chart = null;
+        
         fetch("/chart-data")
             .then(response => response.json())
             .then(data => {
@@ -132,7 +142,9 @@
                     document.getElementById("chart-container").innerHTML = 
                         "<p style='text-align:center;padding:20px;color:#666;'>No data available to plot</p>";
                 } else {
-                    Plotly.newPlot("chart-container", data.data, data.layout);
+                    // Store original data for search reset
+                    originalData = data;
+                    chart = Plotly.newPlot("chart-container", data.data, data.layout);
                 }
             })
             .catch(error => {
@@ -140,8 +152,94 @@
                 document.getElementById("chart-container").innerHTML = 
                     "<p style='text-align:center;padding:20px;color:#666;'>Error loading chart data</p>";
             });
+        
+        // Function to search and highlight a ticker
+        function searchTicker() {
+            if (!originalData) return;
+            
+            const searchTerm = document.getElementById("ticker-search").value.toUpperCase().trim();
+            if (!searchTerm) return;
+            
+            // Create a copy of the original data
+            const highlightData = JSON.parse(JSON.stringify(originalData));
+            
+            // Find indices of points matching the ticker
+            const textArray = highlightData.data[0].text;
+            const sizes = Array(textArray.length).fill(10); // Default size
+            const opacities = Array(textArray.length).fill(0.2); // Low opacity for non-matches
+            
+            // Check each point's text for the ticker
+            let found = false;
+            for (let i = 0; i < textArray.length; i++) {
+                if (textArray[i].startsWith(searchTerm + "<br>")) {
+                    sizes[i] = 20; // Make matching points larger
+                    opacities[i] = 1.0; // Make matching points fully opaque
+                    found = true;
+                }
+            }
+            
+            if (found) {
+                // Update the marker properties to highlight matching tickers
+                Plotly.restyle("chart-container", {
+                    'marker.size': [sizes],
+                    'marker.opacity': [opacities]
+                });
+                
+                // Add a notification that highlighting was successful
+                alert(`Highlighted ticker: ${searchTerm}`);
+            } else {
+                alert(`No data found for ticker: ${searchTerm}`);
+            }
+        }
+        
+        // Function to reset highlighting
+        function resetHighlight() {
+            if (!originalData) return;
+            
+            Plotly.restyle("chart-container", {
+                'marker.size': [Array(originalData.data[0].text.length).fill(10)],
+                'marker.opacity': [Array(originalData.data[0].text.length).fill(0.8)]
+            });
+            
+            document.getElementById("ticker-search").value = "";
+        }
     </script>
     
+    <style>
+        .chart-controls {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+        }
+        
+        .chart-controls input {
+            padding: 8px;
+            width: 150px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        
+        .chart-controls button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+        
+        .chart-controls button:hover {
+            background-color: #45a049;
+        }
+        
+        .chart-instructions {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
 
 </body>
 </html>

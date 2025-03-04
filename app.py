@@ -46,23 +46,49 @@ def chart_data():
     tickers = list(set(df_news['Ticker'].tolist()))
     volume_data = {}
     
-    # Use yfinance to get volume data for each ticker - with proper error handling
+    # Suppress yfinance download progress output
     import yfinance as yf
-    for ticker in tickers:
-        try:
-            # Get data for last 10 days
-            ticker_data = yf.download(ticker, period="10d", progress=False)
-            if not ticker_data.empty and len(ticker_data) > 1:  # Fixed condition
-                # Calculate average volume and relative volume
-                avg_volume = ticker_data['Volume'].iloc[:-1].mean()  # Average excluding latest day
-                latest_volume = ticker_data['Volume'].iloc[-1]  # Latest day's volume
-                rel_volume = float(latest_volume / avg_volume) if avg_volume > 0 else 1.0
-                volume_data[ticker] = rel_volume
-            else:
+    import io
+    import sys
+    
+    # Track successful volume calculations
+    successful_volume_calcs = 0
+    
+    # Redirect stdout during yfinance calls to suppress progress bars
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    
+    try:
+        for ticker in tickers:
+            try:
+                # Get data for last 10 days
+                ticker_data = yf.download(ticker, period="10d", progress=False)
+                
+                # Check if we have enough data properly
+                if not ticker_data.empty and len(ticker_data) > 1:
+                    # Calculate average volume and relative volume
+                    volumes = ticker_data['Volume'].values  # Get as numpy array
+                    avg_volume = volumes[:-1].mean()  # Average excluding latest day
+                    latest_volume = volumes[-1]  # Latest day's volume
+                    
+                    if avg_volume > 0:
+                        rel_volume = float(latest_volume / avg_volume)
+                        # Cap extreme values to prevent outliers
+                        rel_volume = min(max(rel_volume, 0.1), 10.0)
+                        volume_data[ticker] = rel_volume
+                        successful_volume_calcs += 1
+                    else:
+                        volume_data[ticker] = 1.0
+                else:
+                    volume_data[ticker] = 1.0
+            except Exception:
                 volume_data[ticker] = 1.0
-        except Exception as e:
-            print(f"Error getting volume for {ticker}: {e}")
-            volume_data[ticker] = 1.0  # Default to 1.0 (no change) on error
+    finally:
+        # Restore stdout
+        sys.stdout = old_stdout
+    
+    # Log summary instead of individual errors
+    print(f"Volume data: processed {len(tickers)} tickers, {successful_volume_calcs} successful calculations")
     
     # Add relative volume to dataframe
     df_news['RelativeVolume'] = df_news['Ticker'].map(volume_data)

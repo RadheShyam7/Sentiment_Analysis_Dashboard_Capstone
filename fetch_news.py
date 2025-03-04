@@ -13,7 +13,7 @@ model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone"
 finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
 # Your API Token
-API_TOKEN = "cde07cf5-0881-4812-894e-1f2bc46799db"
+API_TOKEN = "bb924f87-31d8-4483-8622-73c5857265ab"
 BASE_URL = "https://elite.finviz.com/news_export.ashx"
 
 # Headers to mimic a real browser

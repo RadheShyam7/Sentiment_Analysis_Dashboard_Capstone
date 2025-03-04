@@ -38,29 +38,77 @@ def index():
 @app.route("/chart-data")
 def chart_data():
     conn = sqlite3.connect("stock_sentiment.db")
-    df = pd.read_sql_query("SELECT Ticker, SentimentScore, PriceChange FROM StockNews", conn)
-    conn.close()
-
-    df = df.dropna(subset=["SentimentScore", "PriceChange"])
-
+    
+    # Get basic data from StockNews
+    df_news = pd.read_sql_query("SELECT Ticker, SentimentScore, PriceChange FROM StockNews", conn)
+    
+    # Get volume data for each ticker (assuming you have it in the database)
+    # If you don't have volume data already, you'll need to fetch it using yfinance
+    tickers = list(set(df_news['Ticker'].tolist()))
+    
+    # Create a dictionary to store volume data
+    volume_data = {}
+    
+    # Use yfinance to get volume data for each ticker
+    import yfinance as yf
+    for ticker in tickers:
+        try:
+            # Get data for last 10 days
+            ticker_data = yf.download(ticker, period="10d")
+            if not ticker_data.empty:
+                # Calculate average volume and relative volume (today's volume / average)
+                avg_volume = ticker_data['Volume'][:-1].mean()  # Average excluding latest day
+                latest_volume = ticker_data['Volume'].iloc[-1]  # Latest day's volume
+                rel_volume = latest_volume / avg_volume if avg_volume > 0 else 1.0
+                volume_data[ticker] = rel_volume
+        except Exception as e:
+            print(f"Error getting volume for {ticker}: {e}")
+            volume_data[ticker] = 1.0  # Default to 1.0 (no change) on error
+    
+    # Add relative volume to dataframe
+    df_news['RelativeVolume'] = df_news['Ticker'].map(volume_data)
+    
+    # Fill missing values with 1.0
+    df_news['RelativeVolume'] = df_news['RelativeVolume'].fillna(1.0)
+    
+    # Drop rows with missing values
+    df = df_news.dropna(subset=["SentimentScore", "PriceChange"])
+    
     if df.empty:
         return json.dumps({"data": [], "layout": {"title": "No Data Available"}})
 
-    # Manually construct the Plotly scatter plot with hover labels
+    # Create a 3D scatter plot
     data = [{
         "x": df["SentimentScore"].tolist(),
         "y": df["PriceChange"].tolist(),
+        "z": df["RelativeVolume"].tolist(),
         "mode": "markers",
-        "marker": {"size": 10},
-        "hoverinfo": "text",  # Show only on hover
-        "text": [f"{ticker}<br>({score}, {change}%)" for ticker, score, change in zip(df["Ticker"], df["SentimentScore"], df["PriceChange"])],
-        "type": "scatter"
+        "type": "scatter3d",  # Changed to 3D scatter
+        "marker": {
+            "size": 10,
+            "color": df["SentimentScore"],  # Color by sentiment
+            "colorscale": "RdBu",  # Red for negative, Blue for positive
+            "colorbar": {"title": "Sentiment"},
+            "opacity": 0.8
+        },
+        "text": [f"{ticker}<br>Sentiment: {score:.4f}<br>Price: {change:.2f}%<br>Vol: {vol:.2f}x" 
+                for ticker, score, change, vol in zip(
+                    df["Ticker"], 
+                    df["SentimentScore"], 
+                    df["PriceChange"], 
+                    df["RelativeVolume"]
+                )],
+        "hoverinfo": "text"
     }]
 
     layout = {
-        "title": "Sentiment Score vs. Price Change",
-        "xaxis": {"title": "Sentiment Score"},
-        "yaxis": {"title": "Price Change (%)"},
+        "title": "Stock Sentiment vs Price Change vs Volume",
+        "scene": {  # 3D scene configuration
+            "xaxis": {"title": "Sentiment Score"},
+            "yaxis": {"title": "Price Change (%)"},
+            "zaxis": {"title": "Relative Volume (x avg)"}
+        },
+        "margin": {"l": 0, "r": 0, "b": 0, "t": 50},
         "template": "plotly_white"
     }
 

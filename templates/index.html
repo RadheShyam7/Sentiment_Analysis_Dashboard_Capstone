@@ -109,8 +109,16 @@
 
     <!-- Quadrant Chart -->
     <div id="chart" class="tabcontent">
-        <h2>Stock Sentiment vs Price Change</h2>
-        <div id="chart-container"></div>
+        <h2>Stock Sentiment vs Price Change vs Volume</h2>
+        <div id="chart-container" style="height: 600px;"></div>
+        <div class="chart-instructions">
+            <p><strong>How to use:</strong> Drag to rotate the 3D view. Scroll to zoom in/out.</p>
+            <ul>
+                <li><strong>X-axis:</strong> Sentiment Score (negative to positive)</li>
+                <li><strong>Y-axis:</strong> Price Change (%)</li>
+                <li><strong>Z-axis:</strong> Relative Volume (compared to 10-day average)</li>
+            </ul>
+        </div>
     </div>
 
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -118,14 +126,20 @@
         fetch("/chart-data")
             .then(response => response.json())
             .then(data => {
-                console.log("📊 Debugging Plotly Data:", data);  // Log data to browser console
+                console.log("📊 Debugging Plotly Data:", data);
                 if (data.data.length === 0) {
                     console.warn("⚠️ No points found to plot!");
+                    document.getElementById("chart-container").innerHTML = 
+                        "<p style='text-align:center;padding:20px;color:#666;'>No data available to plot</p>";
                 } else {
                     Plotly.newPlot("chart-container", data.data, data.layout);
                 }
             })
-            .catch(error => console.error("❌ Error loading chart data:", error));
+            .catch(error => {
+                console.error("❌ Error loading chart data:", error);
+                document.getElementById("chart-container").innerHTML = 
+                    "<p style='text-align:center;padding:20px;color:#666;'>Error loading chart data</p>";
+            });
     </script>
     
 

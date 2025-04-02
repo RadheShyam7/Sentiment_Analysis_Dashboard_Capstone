@@ -116,7 +116,7 @@ def chart_data():
             "colorbar": {"title": "Sentiment"},
             "opacity": 0.8
         },
-        "text": [f"{ticker}<br>Sentiment: {score:.4f}<br>Price: {change:.2f}%<br>Vol: {vol:.2f}x" 
+        "text": [f"{ticker}<br>Sentiment: {score:.4f}<br>Price: {change:.2f}%<br>Relative Vol: {vol:.2f}x" 
                 for ticker, score, change, vol in zip(
                     df["Ticker"].tolist(), 
                     df["SentimentScore"].tolist(), 

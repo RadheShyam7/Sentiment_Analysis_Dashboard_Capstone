@@ -6,6 +6,9 @@ import sqlite3
 import yfinance as yf
 from transformers import BertTokenizer, BertForSequenceClassification, pipeline
 import time
+from datetime import datetime, date, time
+import pytz  # Make sure to import pytz for timezone handling
+
 
 # Load FinBERT Model
 tokenizer = BertTokenizer.from_pretrained("yiyanghkust/finbert-tone")
@@ -13,7 +16,7 @@ model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone"
 finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
 # Your API Token
-API_TOKEN = "bb924f87-31d8-4483-8622-73c5857265ab"
+API_TOKEN = "709012cd-64de-4c89-9edb-175439de128c"
 BASE_URL = "https://elite.finviz.com/news_export.ashx"
 
 # Headers to mimic a real browser
@@ -83,7 +86,8 @@ def fetch_finviz_news(filters=""):
             for _, row in df.iterrows():
                 tickers = row["Ticker"].split(",")  # Split multiple tickers
                 for ticker in tickers:
-                    price_change = get_price_change(ticker.strip())  # Get price change
+                    price_change = get_price_change(ticker.strip(), row["Date"])
+  # Get price change
                     sentiment_score, confidence_score = classify_sentiment_finbert(row["Full_Text"])
 
                     # Ensure defaults if values are missing
@@ -158,27 +162,57 @@ def classify_sentiment_finbert(text):
         print(f"⚠️ Error analyzing sentiment: {e}")
         return 0.0, 0.0  # Default to neutral with 0 confidence
 
-def get_price_change(ticker):
+
+def get_price_change(ticker, article_datetime_str):
     """
-    Fetches the latest price change for a given stock ticker using Yahoo Finance.
-    Returns the percentage change from the previous close.
+    Calculates price change from article timestamp to the latest price using 1-minute data.
+    Gracefully handles non-trading hours by falling back to price before the article.
     """
     try:
+        import pytz
+        article_dt = datetime.strptime(article_datetime_str.strip(), "%Y-%m-%d %H:%M:%S")
+        eastern = pytz.timezone("America/New_York")
+        article_dt = eastern.localize(article_dt)
+
+        now = datetime.now(eastern)
+        if (now - article_dt).days > 7:
+            print(f"⚠️ Article too old for 1-minute data: {ticker}")
+            return None
+
         stock = yf.Ticker(ticker)
-        hist = stock.history(period="2d")  # Get last 2 days' data
+        hist = stock.history(period="5d", interval="1m", prepost=False)
 
-        if len(hist) < 2:
-            return None  # Not enough data to calculate change
+        if hist.empty:
+            return None
 
-        prev_close = hist["Close"].iloc[-2]  # Previous day's close
-        current_price = hist["Close"].iloc[-1]  # Last available close price
+        hist.index = pd.to_datetime(hist.index).tz_convert("America/New_York")
 
-        price_change = ((current_price - prev_close) / prev_close) * 100  # Percentage change
+        # Try price at or after article time
+        after_article = hist[hist.index >= article_dt]
 
-        return round(price_change, 2)  # Return rounded percentage change
+        if not after_article.empty:
+            article_price = after_article.iloc[0]["Close"]
+        else:
+            # No data after article time — fallback to price just before
+            before_article = hist[hist.index < article_dt]
+            if not before_article.empty:
+                article_price = before_article.iloc[-1]["Close"]
+                print(f"⚠️ Using price before article time for {ticker}")
+            else:
+                print(f"⚠️ No data before or after article time for {ticker}")
+                return None
+
+        latest_price = hist["Close"].iloc[-1]
+        price_change = ((latest_price - article_price) / article_price) * 100
+        return round(price_change, 2)
+
     except Exception as e:
-        print(f"⚠️ Failed to fetch price change for {ticker}: {e}")
+        print(f"⚠️ Error calculating price change for {ticker}: {e}")
         return None
+
+
+
+
 
 # Run the function to fetch, scrape, analyze, and store news
 fetch_finviz_news()

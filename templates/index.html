@@ -1,332 +1,43 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <title>Stock Sentiment Analysis</title>
-        <script>
-            function sortBy(field, order) {
-                let url = new URL(window.location.href);
-                url.searchParams.set("sort_by", field);
-                url.searchParams.set("order", order);
-                window.location.href = url.toString();
-            }
-    
-            function openTab(evt, tabName) {
-                let i, tabcontent, tablinks;
-                tabcontent = document.getElementsByClassName("tabcontent");
-                for (i = 0; i < tabcontent.length; i++) {
-                    tabcontent[i].style.display = "none";
-                }
-                tablinks = document.getElementsByClassName("tablinks");
-                for (i = 0; i < tablinks.length; i++) {
-                    tablinks[i].className = tablinks[i].className.replace(" active", "");
-                }
-                document.getElementById(tabName).style.display = "block";
-                evt.currentTarget.className += " active";
-            }
-        </script>
-        <style>
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background-color: #f4f6f8;
-                color: #333;
-                margin: 0;
-                padding: 20px;
-            }
-    
-            h1 {
-                text-align: center;
-                color: #2c3e50;
-            }
-    
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 20px;
-                background-color: white;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-                border-radius: 8px;
-                overflow: hidden;
-            }
-    
-            th, td {
-                padding: 12px 15px;
-                text-align: left;
-            }
-    
-            th {
-                background-color: #2c3e50;
-                color: white;
-            }
-    
-            tr:nth-child(even) {
-                background-color: #f9f9f9;
-            }
-    
-            tr:hover {
-                background-color: #f1f1f1;
-            }
-    
-            .sort-btn {
-                cursor: pointer;
-                color: #ecf0f1;
-                text-decoration: none;
-                margin-left: 5px;
-                font-size: 12px;
-            }
-    
-            .sort-btn:hover {
-                text-decoration: underline;
-            }
-    
-            .tab {
-                overflow: hidden;
-                border-bottom: 2px solid #ccc;
-                background-color: #ecf0f1;
-                margin-bottom: 20px;
-            }
-    
-            .tab button {
-                background-color: inherit;
-                border: none;
-                outline: none;
-                cursor: pointer;
-                padding: 14px 20px;
-                transition: 0.3s;
-                font-size: 16px;
-                font-weight: bold;
-            }
-    
-            .tab button:hover {
-                background-color: #dfe6e9;
-            }
-    
-            .tab button.active {
-                background-color: #bdc3c7;
-            }
-    
-            .tabcontent {
-                display: none;
-                padding: 20px;
-                background-color: white;
-                border-radius: 8px;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            }
-    
-            .chart-controls {
-                margin: 10px 0;
-                padding: 10px;
-                background-color: #ecf0f1;
-                border-radius: 5px;
-            }
-    
-            .chart-controls input {
-                padding: 8px;
-                width: 150px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }
-    
-            .chart-controls button {
-                padding: 8px 15px;
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                margin-left: 5px;
-            }
-    
-            .chart-controls button:hover {
-                background-color: #2980b9;
-            }
-    
-            .chart-instructions {
-                margin-top: 10px;
-                font-size: 14px;
-                color: #666;
-            }
-        </style>
-    </head>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stock News Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.6.2/css/bootstrap.min.css">
+</head>
 <body>
-
-    <h1>Stock Sentiment Analysis</h1>
-
-    <div class="tab">
-        <button class="tablinks active" onclick="openTab(event, 'news')">Stock News</button>
-        <button class="tablinks" onclick="openTab(event, 'chart')">Sentiment vs Price Change</button>
-    </div>
-
-    <!-- Stock News Table -->
-    <div id="news" class="tabcontent" style="display: block;">
-        <table>
-            <tr>
-                <th>Title</th>
-                <th>Source</th>
-                <th>Date</th>
-                <th>Ticker</th>
-                <th>Sentiment Score 
-                    <a class="sort-btn" onclick="sortBy('sentiment', 'desc')">&#9650;</a> <!-- Up arrow -->
-                    <a class="sort-btn" onclick="sortBy('sentiment', 'asc')">&#9660;</a> <!-- Down arrow -->
-                </th>
-                <th>Confidence Score</th>
-                <th>Price Change 
-                    <a class="sort-btn" onclick="sortBy('price', 'desc')">&#9650;</a> <!-- Up arrow -->
-                    <a class="sort-btn" onclick="sortBy('price', 'asc')">&#9660;</a> <!-- Down arrow -->
-                </th>
-            </tr>
-            {% for row in news %}
-            <tr>
-                <td><a href="{{ row[3] }}" target="_blank">{{ row[0] }}</a></td>
-                <td>{{ row[1] }}</td>
-                <td>{{ row[2] }}</td>
-                <td>{{ row[5] }}</td>
-                <td>{{ "%.4f"|format(row[6]) }}</td>  <!-- Sentiment Score -->
-                <td>{{ "%.2f"|format(row[7] * 100) }}%</td>  <!-- Confidence Score -->
-                <td>
-                    {% if row[8] is not none %}
-                        {{ "%.2f"|format(row[8]) }}%
-                    {% else %}
-                        N/A
-                    {% endif %}
-                </td>  <!-- Price Change -->
-            </tr>
-            {% endfor %}
+    <div class="container mt-4">
+        <h1 class="mb-4">Stock News Dashboard</h1>
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Source</th>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Ticker</th>
+                    <th>Sentiment Score</th>
+                    <th>Price Change (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for news_item in news %}
+                <tr>
+                    <td>
+                        <a href="{{ news_item[3] }}" target="_blank">{{ news_item[0] }}</a>
+                    </td>
+                    <td>{{ news_item[1] }}</td>
+                    <td>{{ news_item[2] }}</td>
+                    <td>{{ news_item[4] }}</td>
+                    <td>
+                        <a href="/stock/{{ news_item[5]|trim }}">{{ news_item[5]|trim }}</a>
+                    </td>
+                    <td>{{ news_item[6] }}</td>
+                    <td>{{ news_item[8] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
     </div>
-
-    <!-- Add this before the Quadrant Chart section -->
-    <div class="chart-controls">
-        <input type="text" id="ticker-search" placeholder="Search by ticker (e.g., AAPL)">
-        <button onclick="searchTicker()">Highlight</button>
-        <button onclick="resetHighlight()">Reset</button>
-    </div>
-
-    <!-- Quadrant Chart -->
-    <div id="chart" class="tabcontent">
-        <h2>Stock Sentiment vs Price Change vs Volume</h2>
-        <div id="chart-container" style="height: 600px;"></div>
-        <div class="chart-instructions">
-            <p><strong>How to use:</strong> Drag to rotate the 3D view. Scroll to zoom in/out. Use the search to highlight specific tickers.</p>
-            <ul>
-                <li><strong>X-axis:</strong> Sentiment Score (negative to positive)</li>
-                <li><strong>Y-axis:</strong> Price Change (%)</li>
-                <li><strong>Z-axis:</strong> Relative Volume (compared to 10-day average)</li>
-            </ul>
-        </div>
-    </div>
-
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <script>
-        let originalData = null;
-        let chart = null;
-        
-        fetch("/chart-data")
-            .then(response => response.json())
-            .then(data => {
-                console.log("📊 Debugging Plotly Data:", data);
-                if (data.data.length === 0) {
-                    console.warn("⚠️ No points found to plot!");
-                    document.getElementById("chart-container").innerHTML = 
-                        "<p style='text-align:center;padding:20px;color:#666;'>No data available to plot</p>";
-                } else {
-                    // Store original data for search reset
-                    originalData = data;
-                    chart = Plotly.newPlot("chart-container", data.data, data.layout);
-                }
-            })
-            .catch(error => {
-                console.error("❌ Error loading chart data:", error);
-                document.getElementById("chart-container").innerHTML = 
-                    "<p style='text-align:center;padding:20px;color:#666;'>Error loading chart data</p>";
-            });
-        
-        // Function to search and highlight a ticker
-        function searchTicker() {
-            if (!originalData) return;
-            
-            const searchTerm = document.getElementById("ticker-search").value.toUpperCase().trim();
-            if (!searchTerm) return;
-            
-            // Create a copy of the original data
-            const highlightData = JSON.parse(JSON.stringify(originalData));
-            
-            // Find indices of points matching the ticker
-            const textArray = highlightData.data[0].text;
-            const sizes = Array(textArray.length).fill(10); // Default size
-            const opacities = Array(textArray.length).fill(0.2); // Low opacity for non-matches
-            
-            // Check each point's text for the ticker
-            let found = false;
-            for (let i = 0; i < textArray.length; i++) {
-                if (textArray[i].startsWith(searchTerm + "<br>")) {
-                    sizes[i] = 20; // Make matching points larger
-                    opacities[i] = 1.0; // Make matching points fully opaque
-                    found = true;
-                }
-            }
-            
-            if (found) {
-                // Update the marker properties to highlight matching tickers
-                Plotly.restyle("chart-container", {
-                    'marker.size': [sizes],
-                    'marker.opacity': [opacities]
-                });
-                
-                // Add a notification that highlighting was successful
-                alert(`Highlighted ticker: ${searchTerm}`);
-            } else {
-                alert(`No data found for ticker: ${searchTerm}`);
-            }
-        }
-        
-        // Function to reset highlighting
-        function resetHighlight() {
-            if (!originalData) return;
-            
-            Plotly.restyle("chart-container", {
-                'marker.size': [Array(originalData.data[0].text.length).fill(10)],
-                'marker.opacity': [Array(originalData.data[0].text.length).fill(0.8)]
-            });
-            
-            document.getElementById("ticker-search").value = "";
-        }
-    </script>
-    
-    <style>
-        .chart-controls {
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #f8f8f8;
-            border-radius: 5px;
-        }
-        
-        .chart-controls input {
-            padding: 8px;
-            width: 150px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        
-        .chart-controls button {
-            padding: 8px 15px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-left: 5px;
-        }
-        
-        .chart-controls button:hover {
-            background-color: #45a049;
-        }
-        
-        .chart-instructions {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #666;
-        }
-    </style>
-
 </body>
 </html>

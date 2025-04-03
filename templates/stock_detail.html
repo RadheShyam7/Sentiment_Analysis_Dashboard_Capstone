@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stock Detail - {{ ticker }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.6.2/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container mt-4">
+        <h1>Stock Detail: {{ ticker }}</h1>
+
+        <h2>Company Information</h2>
+        {% if info %}
+            <ul>
+                {% for key, value in info.items() %}
+                    <li><strong>{{ key }}:</strong> {{ value }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No company information available.</p>
+        {% endif %}
+
+        <h2>Stock History (Past Year)</h2>
+        {% if history and history|length > 0 %}
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        {% for key in history[0].keys() %}
+                            <th>{{ key }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in history %}
+                        <tr>
+                            {% for value in row.values() %}
+                                <td>{{ value }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No historical data available.</p>
+        {% endif %}
+
+        <a href="/" class="btn btn-primary">Back to Dashboard</a>
+    </div>
+</body>
+</html>

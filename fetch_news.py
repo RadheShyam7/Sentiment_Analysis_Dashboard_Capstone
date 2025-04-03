@@ -13,7 +13,7 @@ model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone"
 finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
 # Your API Token
-API_TOKEN = "bb924f87-31d8-4483-8622-73c5857265ab"
+API_TOKEN = "ee4683ce-059a-471e-8d7e-741f38acd7f2"
 BASE_URL = "https://elite.finviz.com/news_export.ashx"
 
 # Headers to mimic a real browser
@@ -51,13 +51,13 @@ cursor.execute("""
         PriceChange REAL
     )
 """)
-
 conn.commit()
 
 def fetch_finviz_news(filters=""):
     """
     Fetch stock news headlines from Finviz.
-    Scrape full article text, perform sentiment analysis, fetch stock price change, and store in SQLite.
+    Scrape full article text, perform sentiment analysis, fetch stock price change,
+    and store in SQLite if the news item is not already present.
     """
     url = f"{BASE_URL}?v=3&auth={API_TOKEN}&{filters}"
 
@@ -83,22 +83,26 @@ def fetch_finviz_news(filters=""):
             for _, row in df.iterrows():
                 tickers = row["Ticker"].split(",")  # Split multiple tickers
                 for ticker in tickers:
-                    price_change = get_price_change(ticker.strip())  # Get price change
-                    sentiment_score, confidence_score = classify_sentiment_finbert(row["Full_Text"])
+                    ticker_clean = ticker.strip()
+                    # Check if this article for the ticker already exists (using URL as unique identifier)
+                    cursor.execute("SELECT COUNT(*) FROM StockNews WHERE URL = ? AND Ticker = ?", (row["URL"], ticker_clean))
+                    if cursor.fetchone()[0] == 0:
+                        price_change = get_price_change(ticker_clean)  # Get price change
+                        sentiment_score, confidence_score = classify_sentiment_finbert(row["Full_Text"])
 
-                    # Ensure defaults if values are missing
-                    if price_change is None:
-                        price_change = 0.0
-                    if sentiment_score is None:
-                        sentiment_score = 0.0
+                        # Ensure defaults if values are missing
+                        if price_change is None:
+                            price_change = 0.0
+                        if sentiment_score is None:
+                            sentiment_score = 0.0
 
-                    cursor.execute("""
-                        INSERT INTO StockNews (Title, Source, Date, URL, Category, Ticker, Full_Text, SentimentScore, ConfidenceScore, PriceChange)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row["Title"], row["Source"], row["Date"], row["URL"], row["Category"], ticker.strip(), row["Full_Text"], sentiment_score, confidence_score, price_change))
+                        cursor.execute("""
+                            INSERT INTO StockNews (Title, Source, Date, URL, Category, Ticker, Full_Text, SentimentScore, ConfidenceScore, PriceChange)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (row["Title"], row["Source"], row["Date"], row["URL"], row["Category"], ticker_clean, row["Full_Text"], sentiment_score, confidence_score, price_change))
 
             conn.commit()
-            print("✅ Successfully stored Stock News with Sentiment, Confidence Scores, and Price Changes in Database")
+            print("✅ Successfully stored new Stock News with Sentiment, Confidence Scores, and Price Changes in Database")
             return True
         except Exception as e:
             print(f"❌ Error parsing response: {e}")
@@ -121,14 +125,11 @@ def scrape_article_text(url):
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
-
         paragraphs = soup.find_all("p")
         article_text = " ".join([p.text for p in paragraphs])
-
         return article_text[:5000]  # Limit text size
     except Exception as e:
         print(f"⚠️ Failed to scrape article from {url}: {e}")
-
     return "Error fetching article text."
 
 def classify_sentiment_finbert(text):
@@ -142,21 +143,15 @@ def classify_sentiment_finbert(text):
 
         # Ensure result is a list of dictionaries
         if isinstance(result, list) and isinstance(result[0], list):
-            result = result[0]  # Extract first element (list of label-score dictionaries)
+            result = result[0]
 
-        # Mapping labels to sentiment scores
         score_mapping = {"positive": 1, "negative": -1, "neutral": 0}
-
-        # Compute weighted sentiment score
         sentiment_score = sum(score_mapping[item["label"].lower()] * item["score"] for item in result)
-
-        # Get the highest confidence score
         confidence_score = max(item["score"] for item in result)
-
-        return round(sentiment_score, 4), round(confidence_score, 4)  # Return both
+        return round(sentiment_score, 4), round(confidence_score, 4)
     except Exception as e:
         print(f"⚠️ Error analyzing sentiment: {e}")
-        return 0.0, 0.0  # Default to neutral with 0 confidence
+        return 0.0, 0.0
 
 def get_price_change(ticker):
     """
@@ -170,15 +165,17 @@ def get_price_change(ticker):
         if len(hist) < 2:
             return None  # Not enough data to calculate change
 
-        prev_close = hist["Close"].iloc[-2]  # Previous day's close
-        current_price = hist["Close"].iloc[-1]  # Last available close price
-
-        price_change = ((current_price - prev_close) / prev_close) * 100  # Percentage change
-
-        return round(price_change, 2)  # Return rounded percentage change
+        prev_close = hist["Close"].iloc[-2]
+        current_price = hist["Close"].iloc[-1]
+        price_change = ((current_price - prev_close) / prev_close) * 100
+        return round(price_change, 2)
     except Exception as e:
         print(f"⚠️ Failed to fetch price change for {ticker}: {e}")
         return None
 
-# Run the function to fetch, scrape, analyze, and store news
-fetch_finviz_news()
+if __name__ == "__main__":
+    # Poll for new news every 60 seconds (near real-time updates)
+    while True:
+        fetch_finviz_news()
+        print("Waiting 60 seconds before next fetch...")
+        time.sleep(60)

@@ -4,19 +4,28 @@ import io
 from bs4 import BeautifulSoup
 import sqlite3
 import yfinance as yf
-from transformers import BertTokenizer, BertForSequenceClassification, pipeline
 import time
 from datetime import datetime, date, time
 import pytz  # Make sure to import pytz for timezone handling
+from openai import OpenAI
 
+client = OpenAI(api_key="")
+import json
 
-# Load FinBERT Model
-tokenizer = BertTokenizer.from_pretrained("yiyanghkust/finbert-tone")
-model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone")
-finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
+# Set your OpenAI API key (or set it in your environment variable OPENAI_API_KEY)
+
+# --- Remove or comment out FinBERT code ---
+# from transformers import BertTokenizer, BertForSequenceClassification, pipeline
+# 
+# # Load FinBERT Model
+# tokenizer = BertTokenizer.from_pretrained("yiyanghkust/finbert-tone")
+# model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone")
+# finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
+# --- End FinBERT removal ---
+
 
 # Your API Token
-API_TOKEN = "709012cd-64de-4c89-9edb-175439de128c"
+API_TOKEN = "89501805-b73b-4ed5-baea-1748ee898a73"
 BASE_URL = "https://elite.finviz.com/news_export.ashx"
 
 # Headers to mimic a real browser
@@ -57,45 +66,85 @@ cursor.execute("""
 
 conn.commit()
 
-def fetch_finviz_news(filters=""):
-    """
-    Fetch stock news headlines from Finviz.
-    Scrape full article text, perform sentiment analysis, fetch stock price change, and store in SQLite.
-    """
-    url = f"{BASE_URL}?v=3&auth={API_TOKEN}&{filters}"
 
+def classify_sentiment_chatgpt(text):
+    """
+    Use OpenAI's ChatGPT to perform sentiment analysis.
+    Returns:
+       sentiment (float): a value between -1 (very negative) and 1 (very positive)
+       confidence (float): a value between 0 and 1.
+    """
+    try:
+        prompt = (
+            "Please analyze the sentiment of the following text. "
+            "Return your result as a JSON object with two keys: 'sentiment' and 'confidence'. "
+            "'sentiment' should be a float between -1 (very negative) and 1 (very positive), "
+            "and 'confidence' should be a float between 0 and 1. "
+            "Here is the text:\n\n"
+            f"'''{text}'''"
+        )
+        response = client.chat.completions.create(model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a sentiment analysis assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=60,
+        temperature=0.0)
+        reply = response.choices[0].message.content.strip()
+        result = json.loads(reply)
+        sentiment = result.get("sentiment", 0.0)
+        confidence = result.get("confidence", 0.0)
+        return round(sentiment, 4), round(confidence, 4)
+    except Exception as e:
+        print(f"⚠️ Error analyzing sentiment via ChatGPT: {e}")
+        return 0.0, 0.0
+
+
+def fetch_finviz_news(filters=""):
+    url = f"{BASE_URL}?v=3&auth={API_TOKEN}&{filters}"
     with requests.Session() as session:
         response = session.get(url, headers=HEADERS, cookies=COOKIES)
 
     if response.status_code == 200:
-        try:
-            raw_text = response.text.strip()
-            df = pd.read_csv(io.StringIO(raw_text), delimiter=",", quotechar='"', on_bad_lines="skip")
+        raw_text = response.text.strip()
+        # Check if the response is HTML rather than CSV
+        if raw_text.startswith("<!DOCTYPE html>"):
+            print("❌ Received HTML response instead of CSV. Check your API token, cookies, and URL.")
+            return None
 
-            # Ensure proper column naming
+        try:
+            df = pd.read_csv(io.StringIO(raw_text), delimiter=",", quotechar='"', 
+                             on_bad_lines="skip", header=None)
+            if df.shape[1] == 1:
+                df = df[0].apply(lambda row: row.split(",")).apply(pd.Series)
+                if df.shape[1] < 6:
+                    print(f"❌ After manual split, unexpected CSV format: got {df.shape[1]} columns")
+                    print("Raw text for debugging:\n", raw_text)
+                    return None
+            if df.shape[1] < 6:
+                print(f"❌ Unexpected CSV format: got {df.shape[1]} columns")
+                return None
+
             df.columns = ["Title", "Source", "Date", "URL", "Category", "Ticker"]
             df = df.dropna(subset=["Title", "Source", "Date", "URL", "Ticker"])
 
             # Scrape full article text
             df["Full_Text"] = df["URL"].apply(scrape_article_text)
 
-            # Perform sentiment analysis
-            df[["SentimentScore", "ConfidenceScore"]] = df["Full_Text"].apply(lambda text: pd.Series(classify_sentiment_finbert(text)))
+            # Perform sentiment analysis using ChatGPT
+            df[["SentimentScore", "ConfidenceScore"]] = df["Full_Text"].apply(lambda text: pd.Series(classify_sentiment_chatgpt(text)))
 
             # Insert multiple rows for articles with multiple tickers
             for _, row in df.iterrows():
                 tickers = row["Ticker"].split(",")  # Split multiple tickers
                 for ticker in tickers:
                     price_change = get_price_change(ticker.strip(), row["Date"])
-  # Get price change
-                    sentiment_score, confidence_score = classify_sentiment_finbert(row["Full_Text"])
-
-                    # Ensure defaults if values are missing
+                    # Use ChatGPT for sentiment analysis again in case you need per-ticker context
+                    sentiment_score, confidence_score = classify_sentiment_chatgpt(row["Full_Text"])
                     if price_change is None:
                         price_change = 0.0
                     if sentiment_score is None:
                         sentiment_score = 0.0
-
                     cursor.execute("""
                         INSERT INTO StockNews (Title, Source, Date, URL, Category, Ticker, Full_Text, SentimentScore, ConfidenceScore, PriceChange)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -116,7 +165,7 @@ def scrape_article_text(url):
     Scrape the full text of a news article from its URL while skipping problematic domains.
     """
     blocked_domains = ["businesswire.com"]
-    
+
     if any(domain in url for domain in blocked_domains):
         print(f"⚠️ Skipping {url} - Known to block scrapers.")
         return "Skipped due to website restrictions."
@@ -134,33 +183,6 @@ def scrape_article_text(url):
         print(f"⚠️ Failed to scrape article from {url}: {e}")
 
     return "Error fetching article text."
-
-def classify_sentiment_finbert(text):
-    """
-    Use FinBERT to classify sentiment and return both sentiment score and confidence score.
-    Positive: Closer to +1, Negative: Closer to -1, Neutral: Around 0.
-    Confidence Score: The highest probability from the model.
-    """
-    try:
-        result = finbert_pipeline(text[:512], top_k=None)  # Get all sentiment scores
-
-        # Ensure result is a list of dictionaries
-        if isinstance(result, list) and isinstance(result[0], list):
-            result = result[0]  # Extract first element (list of label-score dictionaries)
-
-        # Mapping labels to sentiment scores
-        score_mapping = {"positive": 1, "negative": -1, "neutral": 0}
-
-        # Compute weighted sentiment score
-        sentiment_score = sum(score_mapping[item["label"].lower()] * item["score"] for item in result)
-
-        # Get the highest confidence score
-        confidence_score = max(item["score"] for item in result)
-
-        return round(sentiment_score, 4), round(confidence_score, 4)  # Return both
-    except Exception as e:
-        print(f"⚠️ Error analyzing sentiment: {e}")
-        return 0.0, 0.0  # Default to neutral with 0 confidence
 
 
 def get_price_change(ticker, article_datetime_str):
@@ -209,9 +231,6 @@ def get_price_change(ticker, article_datetime_str):
     except Exception as e:
         print(f"⚠️ Error calculating price change for {ticker}: {e}")
         return None
-
-
-
 
 
 # Run the function to fetch, scrape, analyze, and store news

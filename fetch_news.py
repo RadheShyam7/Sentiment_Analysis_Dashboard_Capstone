@@ -16,7 +16,7 @@ model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone"
 finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
 # Your API Token
-API_TOKEN = "709012cd-64de-4c89-9edb-175439de128c"
+API_TOKEN = "6f0ab75a-803d-49e7-91ed-f8c818db85e5"
 BASE_URL = "https://elite.finviz.com/news_export.ashx"
 
 # Headers to mimic a real browser
@@ -112,11 +112,12 @@ def fetch_finviz_news(filters=""):
         return None
 
 def scrape_article_text(url):
-    """
-    Scrape the full text of a news article from its URL while skipping problematic domains.
-    """
     blocked_domains = ["businesswire.com"]
-    
+
+    # ✅ NEW: Fix for relative Finviz paths
+    if url.startswith("/news/"):
+        url = "https://finviz.com" + url
+
     if any(domain in url for domain in blocked_domains):
         print(f"⚠️ Skipping {url} - Known to block scrapers.")
         return "Skipped due to website restrictions."
@@ -129,11 +130,12 @@ def scrape_article_text(url):
         paragraphs = soup.find_all("p")
         article_text = " ".join([p.text for p in paragraphs])
 
-        return article_text[:5000]  # Limit text size
+        return article_text[:5000]
     except Exception as e:
         print(f"⚠️ Failed to scrape article from {url}: {e}")
 
     return "Error fetching article text."
+
 
 def classify_sentiment_finbert(text):
     """

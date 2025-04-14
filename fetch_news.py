@@ -16,7 +16,7 @@ model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone"
 finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
 # Your API Token
-API_TOKEN = "6f0ab75a-803d-49e7-91ed-f8c818db85e5"
+API_TOKEN = "8ee13379-791b-4ccb-9452-f061bf3c4f6c"
 BASE_URL = "https://elite.finviz.com/news_export.ashx"
 
 # Headers to mimic a real browser
@@ -35,33 +35,33 @@ COOKIES = {
 }
 
 # Connect to SQLite Database
-conn = sqlite3.connect("stock_sentiment.db")
-cursor = conn.cursor()
 
-# Create Table if Not Exists (Updated to store SentimentScore, ConfidenceScore, and PriceChange)
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS StockNews (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        Title TEXT,
-        Source TEXT,
-        Date TEXT,
-        URL TEXT,
-        Category TEXT,
-        Ticker TEXT,
-        Full_Text TEXT,
-        SentimentScore REAL,
-        ConfidenceScore REAL,
-        PriceChange REAL
-    )
-""")
-
-conn.commit()
 
 def fetch_finviz_news(filters=""):
     """
     Fetch stock news headlines from Finviz.
     Scrape full article text, perform sentiment analysis, fetch stock price change, and store in SQLite.
     """
+    conn = sqlite3.connect("stock_sentiment.db")
+    cursor = conn.cursor()
+
+# Create Table if Not Exists (Updated to store SentimentScore, ConfidenceScore, and PriceChange)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS StockNews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            Title TEXT,
+            Source TEXT,
+            Date TEXT,
+            URL TEXT,
+            Category TEXT,
+            Ticker TEXT,
+            Full_Text TEXT,
+            SentimentScore REAL,
+            ConfidenceScore REAL,
+            PriceChange REAL,
+            UNIQUE(URL, Ticker)  -- ✅ Composite unique constraint
+        )
+    """)
     url = f"{BASE_URL}?v=3&auth={API_TOKEN}&{filters}"
 
     with requests.Session() as session:
@@ -84,24 +84,33 @@ def fetch_finviz_news(filters=""):
 
             # Insert multiple rows for articles with multiple tickers
             for _, row in df.iterrows():
-                tickers = row["Ticker"].split(",")  # Split multiple tickers
+                tickers = row["Ticker"].split(",")
+                article_datetime_str = row["Date"]  # ✅ This is your second required argument
                 for ticker in tickers:
-                    price_change = get_price_change(ticker.strip(), row["Date"])
-  # Get price change
+                    price_change = get_price_change(ticker.strip(), article_datetime_str)  # ✅ FIXED
+
                     sentiment_score, confidence_score = classify_sentiment_finbert(row["Full_Text"])
 
-                    # Ensure defaults if values are missing
-                    if price_change is None:
-                        price_change = 0.0
-                    if sentiment_score is None:
-                        sentiment_score = 0.0
+                    # Provide default fallbacks
+                    price_change = price_change if price_change is not None else 0.0
+                    sentiment_score = sentiment_score if sentiment_score is not None else 0.0
 
-                    cursor.execute("""
-                        INSERT INTO StockNews (Title, Source, Date, URL, Category, Ticker, Full_Text, SentimentScore, ConfidenceScore, PriceChange)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row["Title"], row["Source"], row["Date"], row["URL"], row["Category"], ticker.strip(), row["Full_Text"], sentiment_score, confidence_score, price_change))
+                    try:
+                        cursor.execute("""
+                            INSERT INTO StockNews (
+                                Title, Source, Date, URL, Category, Ticker, Full_Text,
+                                SentimentScore, ConfidenceScore, PriceChange
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            row["Title"], row["Source"], row["Date"], row["URL"], row["Category"],
+                            ticker.strip(), row["Full_Text"], sentiment_score, confidence_score, price_change
+                        ))
+                    except sqlite3.IntegrityError:
+                        print(f"⚠️ Skipping duplicate: ({row['URL']}, {ticker.strip()})")
+
 
             conn.commit()
+            conn.close()
             print("✅ Successfully stored Stock News with Sentiment, Confidence Scores, and Price Changes in Database")
             return True
         except Exception as e:

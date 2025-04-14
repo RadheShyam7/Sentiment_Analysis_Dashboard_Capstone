@@ -4,6 +4,19 @@ import pandas as pd
 import json
 import plotly
 import plotly.express as px
+import threading
+import time
+from fetch_news import fetch_finviz_news  # Make sure this is importable
+
+def run_news_updater():
+    while True:
+        print("🔄 [Background] Fetching latest news...")
+        try:
+            fetch_finviz_news()
+        except Exception as e:
+            print(f"❌ Error in background fetch: {e}")
+        time.sleep(300)  # Wait for 10 minutes
+
 
 app = Flask(__name__)
 
@@ -140,4 +153,8 @@ def chart_data():
     return json.dumps({"data": data, "layout": layout})
 
 if __name__ == "__main__":
+    # Start background thread before launching the web app
+    threading.Thread(target=run_news_updater, daemon=True).start()
+
+    # Run the Flask web server
     app.run(debug=True)

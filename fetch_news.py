@@ -1,3 +1,4 @@
+from pyfinviz.news import News
 import requests
 import pandas as pd
 import io
@@ -6,8 +7,22 @@ import sqlite3
 import yfinance as yf
 from transformers import BertTokenizer, BertForSequenceClassification, pipeline
 import time
-from datetime import datetime, date, time
-import pytz  # Make sure to import pytz for timezone handling
+from datetime import datetime
+import pytz
+import yfinance as yf
+import re
+
+
+# A set of known tickers to validate against (you can preload a static list or fetch dynamically)
+# Optional: cache or limit to US tickers from major indices
+import yfinance as yf
+
+# Load all valid tickers (one-time fetch — cache or store this if needed)
+VALID_TICKERS = set(ticker.strip().upper() for ticker in yf.tickers_sp500())  # or use a larger static list
+
+def extract_tickers_from_text(text):
+    potential_tickers = re.findall(r'\b[A-Z]{2,5}\b', text)
+    return [ticker for ticker in potential_tickers if ticker in VALID_TICKERS]
 
 
 # Load FinBERT Model
@@ -15,37 +30,13 @@ tokenizer = BertTokenizer.from_pretrained("yiyanghkust/finbert-tone")
 model = BertForSequenceClassification.from_pretrained("yiyanghkust/finbert-tone")
 finbert_pipeline = pipeline("text-classification", model=model, tokenizer=tokenizer)
 
-# Your API Token
-API_TOKEN = "8ee13379-791b-4ccb-9452-f061bf3c4f6c"
-BASE_URL = "https://elite.finviz.com/news_export.ashx"
+def fetch_finviz_news():
+    print("📥 Fetching news from Finviz (via pyfinviz)...")
 
-# Headers to mimic a real browser
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Referer": "https://elite.finviz.com/",
-    "Upgrade-Insecure-Requests": "1"
-}
-
-# Replace with your Finviz session cookies (get them from browser DevTools)
-COOKIES = {
-    ".ASPXAUTH": "184E291C2CC06150882CC3ED0A70C16BA13D2E497E70F67B78ED178D74FCAE6150C771862FD8218CD6E346DFB6A273077098AA67DD1351FBAD15C3E6CE1F001FFEC95945E6BBEC3DD19E346AF00E9C707AF9D5931516E8035A8F916D3958DD3D037D45C1E2E54E9EBD0DE4B9B6C3D9CFA627C7664235850EBED8AF9AA64195E2091643C6FCAC4D7EF2FF3E2A01C9BD4645572465E27B4EC4E0209D7F8328F576C5F846AC1E01A8444E98B493828F0AF7256B3FE08D0448AE26B864794E22EA0E80551EC6C44D7259B1B405462CE1823897D7C22E",
-    "EliteSession": "YOUR_ELITESESSION_COOKIE_HERE",
-    "panoramaId": "a4b535a871c6fc19d99fbc27bf39a9fb927aabb609df1f8fcae8016252571d7b",
-    "_ga": "GA1.1.623035271.1739240112",
-}
-
-# Connect to SQLite Database
-
-
-def fetch_finviz_news(filters=""):
-    """
-    Fetch stock news headlines from Finviz.
-    Scrape full article text, perform sentiment analysis, fetch stock price change, and store in SQLite.
-    """
     conn = sqlite3.connect("stock_sentiment.db")
     cursor = conn.cursor()
 
-# Create Table if Not Exists (Updated to store SentimentScore, ConfidenceScore, and PriceChange)
+    # Create table with unique (Title, URL, Ticker) if not exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS StockNews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,66 +50,47 @@ def fetch_finviz_news(filters=""):
             SentimentScore REAL,
             ConfidenceScore REAL,
             PriceChange REAL,
-            UNIQUE(URL, Ticker)  -- ✅ Composite unique constraint
+            UNIQUE(URL, Ticker)
         )
     """)
-    url = f"{BASE_URL}?v=3&auth={API_TOKEN}&{filters}"
 
-    with requests.Session() as session:
-        response = session.get(url, headers=HEADERS, cookies=COOKIES)
-
-    if response.status_code == 200:
-        try:
-            raw_text = response.text.strip()
-            df = pd.read_csv(io.StringIO(raw_text), delimiter=",", quotechar='"', on_bad_lines="skip")
-
-            # Ensure proper column naming
-            df.columns = ["Title", "Source", "Date", "URL", "Category", "Ticker"]
-            df = df.dropna(subset=["Title", "Source", "Date", "URL", "Ticker"])
-
-            # Scrape full article text
-            df["Full_Text"] = df["URL"].apply(scrape_article_text)
-
-            # Perform sentiment analysis
-            df[["SentimentScore", "ConfidenceScore"]] = df["Full_Text"].apply(lambda text: pd.Series(classify_sentiment_finbert(text)))
-
-            # Insert multiple rows for articles with multiple tickers
-            for _, row in df.iterrows():
-                tickers = row["Ticker"].split(",")
-                article_datetime_str = row["Date"]  # ✅ This is your second required argument
-                for ticker in tickers:
-                    price_change = get_price_change(ticker.strip(), article_datetime_str)  # ✅ FIXED
-
-                    sentiment_score, confidence_score = classify_sentiment_finbert(row["Full_Text"])
-
-                    # Provide default fallbacks
-                    price_change = price_change if price_change is not None else 0.0
-                    sentiment_score = sentiment_score if sentiment_score is not None else 0.0
-
-                    try:
-                        cursor.execute("""
-                            INSERT INTO StockNews (
-                                Title, Source, Date, URL, Category, Ticker, Full_Text,
-                                SentimentScore, ConfidenceScore, PriceChange
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            row["Title"], row["Source"], row["Date"], row["URL"], row["Category"],
-                            ticker.strip(), row["Full_Text"], sentiment_score, confidence_score, price_change
-                        ))
-                    except sqlite3.IntegrityError:
-                        print(f"⚠️ Skipping duplicate: ({row['URL']}, {ticker.strip()})")
+    try:
+        finviz_news = News()
+        df = finviz_news.news_df  # DataFrame with 'Title', 'Link', 'Date'
+        df.rename(columns={"Headline": "Title", "URL": "Link", "Time": "Date"}, inplace=True)
 
 
-            conn.commit()
-            conn.close()
-            print("✅ Successfully stored Stock News with Sentiment, Confidence Scores, and Price Changes in Database")
-            return True
-        except Exception as e:
-            print(f"❌ Error parsing response: {e}")
-            return None
-    else:
-        print(f"❌ Failed to fetch news. Status Code: {response.status_code}")
-        return None
+        for _, row in df.iterrows():
+            title = row['Title']
+            url = row['Link']
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            full_text = scrape_article_text(url)
+            sentiment_score, confidence_score = classify_sentiment_finbert(full_text)
+
+            # Extract tickers using a simple heuristic (update logic if needed)
+            tickers = extract_tickers_from_text(title)
+            for ticker in tickers:
+                price_change = get_price_change(ticker, timestamp)
+
+                try:
+                    cursor.execute("""
+                        INSERT INTO StockNews (
+                            Title, Source, Date, URL, Category, Ticker, Full_Text,
+                            SentimentScore, ConfidenceScore, PriceChange
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        title, "Finviz", timestamp, url, "News", ticker,
+                        full_text, sentiment_score, confidence_score, price_change
+                    ))
+                except sqlite3.IntegrityError:
+                    print(f"⚠️ Skipping duplicate: ({url}, {ticker})")
+        
+        conn.commit()
+        print("✅ News fetched and stored from pyfinviz.")
+    except Exception as e:
+        print(f"❌ Error fetching news: {e}")
+    finally:
+        conn.close()
 
 def scrape_article_text(url):
     blocked_domains = ["businesswire.com"]
